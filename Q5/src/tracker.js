@@ -21,10 +21,45 @@ let currentFilter = "all";
 
 
 function loadDashboardState() {
-    const raw   = localStorage.getItem("dashboardState");
-    const state = JSON.parse(raw);             // No try/catch
-    currentFilter = state.filter;              // No enum validation
+    const raw = localStorage.getItem("dashboardState");
+    let state = { filter: "all" };
+
+    if (raw) {
+        try {
+            const parsed = JSON.parse(raw);
+            if (
+                parsed &&
+                typeof parsed.filter === "string" &&
+                ACCEPTED_FILTERS.includes(parsed.filter)
+            ) {
+                state.filter = parsed.filter;
+            }
+        } catch (error) {
+            state = { filter: "all" };
+        }
+    }
+
+    currentFilter = state.filter;
+
+    const filterInput = document.getElementById("filter-select");
+    if (filterInput) {
+        filterInput.value = currentFilter;
+    }
+
     applyFilter(currentFilter);
+}
+
+function saveDashboardState() {
+    const filterInput = document.getElementById("filter-select");
+    const filter = filterInput ? filterInput.value : "all";
+
+    if (!ACCEPTED_FILTERS.includes(filter)) {
+        currentFilter = "all";
+        return;
+    }
+
+    localStorage.setItem("dashboardState", JSON.stringify({ filter: filter }));
+    currentFilter = filter;
 }
 
 
@@ -55,9 +90,19 @@ function saveDashboardState() {
 
 
 async function fetchIncidents() {
-    const res  = fetch("/api/incidents");      // Missing await
-    const data = res.json();                   // Missing await; res is a Promise
-    return data;
+    try {
+        const response = await fetch("/api/incidents");
+
+        if (!response.ok) {
+            throw new Error("HTTP error: " + response.status); // Done!
+        }
+
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error("Failed to fetch incidents:", error);
+        return [];
+    }
 }
 
 
@@ -73,15 +118,46 @@ async function fetchIncidents() {
 
 function renderIncidents(incidents) {
     const container = document.getElementById("incident-list");
-    container.innerHTML = "";                  // Clear previous results
+    container.replaceChildren();                  // Clear previous results
+
+    function renderIncidents(incidents) {
+    const container = document.getElementById("incident-list");
+    container.replaceChildren();
+
+    if (!Array.isArray(incidents)) {
+        const errorItem = document.createElement("li");
+        errorItem.textContent = "Unable to display incidents right now.";
+        container.appendChild(errorItem);
+        return;
+    }
 
     incidents.forEach(function (incident) {
+        if (
+            !incident ||
+            typeof incident.title !== "string" ||
+            incident.title.trim() === "" ||
+            typeof incident.severity !== "string" ||
+            !ACCEPTED_SEVERITIES.includes(incident.severity)
+        ) {
+            console.warn("Skipping invalid incident:", incident);
+            return;
+        }
+
         const item = document.createElement("li");
-        // UNSAFE – directly inserts API response as HTML
-        item.innerHTML =
-            "<strong>" + incident.title + "</strong>" +
-            " <span class='severity severity-" + incident.severity + "'>" +
-            incident.severity + "</span>";
+
+        const titleEl = document.createElement("strong");
+        titleEl.textContent = incident.title.trim();
+
+        const spacer = document.createTextNode(" ");
+
+        const severityEl = document.createElement("span");
+        severityEl.className = "severity severity-" + incident.severity;
+        severityEl.textContent = incident.severity;
+
+        item.appendChild(titleEl);
+        item.appendChild(spacer);
+        item.appendChild(severityEl);
+
         container.appendChild(item);
     });
 }
@@ -128,3 +204,5 @@ document.addEventListener("DOMContentLoaded", async function () {
     });
 
 });
+
+}
